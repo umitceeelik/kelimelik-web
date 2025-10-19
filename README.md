@@ -63,8 +63,3 @@ Backend çalıştıktan sonra `http://localhost:8000` üzerinden API’lere eri�
 
 Tüm bağımlılıklar `requirements.txt` içinde listelenmiştir.
 
-## 🛠️ Katkı
-PR ve issue açabilirsin. Kod stilini korumak için PEP8’e uymaya dikkat et.
-
-## 📜 Lisans
-MIT
