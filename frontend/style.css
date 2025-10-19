@@ -309,3 +309,17 @@ body {
     font-weight: 800;
     font-size: 12px
 }
+
+/* Joker ve bilinmeyen taş stilleri */
+.tile--joker {
+    background: #fff0cc;
+    border: 2px dashed #ff9800;
+    color: #b36b00;
+    font-weight: 700;
+}
+
+.tile--unknown {
+    background: #f3f3f3;
+    border: 1px dashed #bbb;
+    color: #666;
+}

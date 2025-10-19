@@ -14,7 +14,7 @@ const movesEl = document.getElementById('moves');
 const summary = document.getElementById('summary');
 
 let BOARD = Array.from({ length: 15 }, () => Array(15).fill('.'));
-let RACK = "";
+let RACK = '';
 let MOVES = [];
 let DICT = [];
 let CFG = null;
@@ -25,9 +25,9 @@ let CURRENT_PREVIEW = null;
 function fitBoardToPanel() {
     const wrap = document.querySelector('.boardWrap');
     if (!wrap) return;
-    const GAP = 2;            // CSS --gap
-    const BORDER = 2;         // board 1px kenarlık * 2
-    const FUDGE = 1;          // taşmayı kesin önlemek için 1px marj
+    const GAP = 2;     // CSS --gap
+    const BORDER = 2;  // board 1px kenarlık * 2
+    const FUDGE = 1;   // taşmayı kesin önlemek için 1px marj
     const inner = wrap.clientWidth;
     const cell = Math.floor((inner - GAP * 16 - BORDER - FUDGE) / 15);
     const clamped = Math.max(20, cell);
@@ -81,21 +81,33 @@ fileEl.addEventListener('change', () => {
 solveBtn.addEventListener('click', async () => {
     const f = fileEl.files?.[0];
     if (!f) { alert('Lütfen ekran görüntüsü seçin.'); return; }
-    solveBtn.disabled = true; solveBtn.textContent = 'Çözüyor...';
+
+    solveBtn.disabled = true;
+    solveBtn.textContent = 'Çözüyor...';
+
     try {
         const fd = new FormData(); fd.append('file', f);
         const res = await fetch('/api/solve', { method: 'POST', body: fd });
         const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Hata');
 
-        BOARD = data.board; RACK = data.rack || "";
+        BOARD = data.board;
+        // OCR bazen '?' döndürebiliyor → varsayılan olarak joker kabul edelim (hemen öneri çıkması için).
+        // Kullanıcı isterse rafta taşa dokunarak tekrar '?' yapabilir (toggle).
+        RACK = String(data.rack || '').toLocaleUpperCase('tr-TR').replace(/\?/g, '*');
+
         CURRENT_PREVIEW = null;
-        drawBoard(BOARD); drawRack(RACK);
+        drawBoard(BOARD);
+        drawRack(RACK);
         meta.textContent = `Dolu hücre: ${countFilled(BOARD)} • Eldeki taş: ${RACK.length}`;
 
         if (!DICT.length) DICT = await loadDictionary();
         await updateSuggestions();
-    } catch (e) { alert(e.message); }
-    finally { solveBtn.disabled = false; solveBtn.textContent = 'Çöz'; }
+    } catch (e) {
+        alert(e.message);
+    } finally {
+        solveBtn.disabled = false;
+        solveBtn.textContent = 'Çöz';
+    }
 });
 
 /* =========== Tahta & Eldeki Taşlar çizimi =========== */
@@ -108,10 +120,10 @@ function drawBoard(b) {
         if (!ch || ch === '.' || ch === '?') {
             const p = PREM?.[r]?.[c];
             if (p) {
-                d.classList.add(p);                      // premium zemin
+                d.classList.add(p);                        // premium zemin
                 const mini = document.createElement('div'); // ortadaki beyaz etiket
                 mini.className = `mini ${p}`;
-                mini.textContent = premiumLabel(p);      // "H²", "K³" ...
+                mini.textContent = premiumLabel(p);        // "H²", "K³" ...
                 d.appendChild(mini);
             }
             if (r === 7 && c === 7) {
@@ -129,19 +141,54 @@ function drawBoard(b) {
         boardEl.appendChild(d);
     }
 }
+
+// >>> Joker destekli rafta çizim (+ toggle * ↔ ?)
 function drawRack(text) {
     rackEl.innerHTML = '';
-    for (const ch of (text || '')) {
-        const d = document.createElement('div'); d.className = 'tile'; d.textContent = ch || ''; rackEl.appendChild(d);
-    }
+    const arr = (text || '').split('');
+
+    arr.forEach((ch, idx) => {
+        const d = document.createElement('div');
+        d.className = 'tile';
+
+        if (ch === '*') {
+            d.classList.add('tile--joker');
+            d.textContent = '★';
+            d.title = 'Joker (*): dokunarak ? yap';
+        } else if (ch === '?') {
+            d.classList.add('tile--unknown');
+            d.textContent = '?';
+            d.title = 'Bilinmeyen taş: dokunarak joker (*) yap';
+        } else {
+            d.textContent = ch || '';
+        }
+
+        // Yalnızca * ve ? için toggle aktif
+        d.addEventListener('click', () => {
+            const cur = RACK.split('');
+            if (cur[idx] === '*') cur[idx] = '?';
+            else if (cur[idx] === '?') cur[idx] = '*';
+            else return;
+            RACK = cur.join('');
+            drawRack(RACK);
+            updateSuggestions(); // rack değişti → önerileri yenile
+        });
+
+        rackEl.appendChild(d);
+    });
 }
-function countFilled(b) { let n = 0; for (const r of b) for (const ch of r) if (ch !== '.' && ch !== '?') n++; return n; }
+
+function countFilled(b) {
+    let n = 0; for (const r of b) for (const ch of r) if (ch !== '.' && ch !== '?') n++; return n;
+}
 
 /* =========== Öneriler – tek liste, yüksekten düşüğe =========== */
 async function updateSuggestions() {
     const rows = BOARD.map(r => r.join(''));
-    MOVES = solveBoard(rows, RACK, DICT);
-    // puana göre sırala (desc), uzunluk eşitse uzun kelimeyi öne al
+    // Solver’a giderken '?' → '*' çeviriyoruz ki joker gibi davransın
+    const rackForSolve = RACK.replace(/\?/g, '*');
+
+    MOVES = solveBoard(rows, rackForSolve, DICT);
     MOVES.sort((a, b) => (b.score - a.score) || (b.word.length - a.word.length));
     renderMoves();
 }
@@ -150,7 +197,7 @@ function renderMoves() {
     summary.textContent = MOVES.length ? `${MOVES.length} aday bulundu (yüksek puandan düşüğe)` : 'Aday bulunamadı';
     movesEl.innerHTML = '';
 
-    const show = MOVES.slice(0, 300); // güvenli sınır
+    const show = MOVES.slice(0, 300);
     for (const m of show) {
         const li = document.createElement('li');
         li.innerHTML = `
