@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="tr">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <title>Kelimelik OCR & Önerici</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+
+<body>
+    <header class="topbar">
+        <div class="brand">Kelimelik OCR</div>
+
+        <div class="actions">
+            <!-- sadece dosya seçilince görünen küçük kare -->
+            <img id="thumb" class="thumb" alt="" hidden>
+
+            <label class="filebtn">
+                <input id="file" type="file" accept="image/*" />
+                <span id="fileBtnText">Dosya Seç</span>
+            </label>
+            <button id="solveBtn" class="btn">Çöz</button>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="panel">
+            <h2>Tahta</h2>
+            <div id="meta" class="meta"></div>
+
+            <div class="boardWrap">
+                <div id="board" class="board"></div>
+            </div>
+
+            <h3>Eldeki Taşlar</h3>
+            <div id="rack" class="rack"></div>
+
+            <h3>Yüklenen Görüntü</h3>
+            <img id="preview" alt="yüklenen görüntü" />
+        </section>
+
+        <section class="panel">
+            <h2>Önerilen Hamleler</h2>
+            <div id="summary" class="meta"></div>
+            <!-- tek liste, yüksekten düşüğe -->
+            <ul id="moves" class="items"></ul>
+        </section>
+    </main>
+
+    <script type="module" src="/static/main.js"></script>
+</body>
+
+</html>

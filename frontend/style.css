@@ -1,0 +1,311 @@
+:root {
+    --cell: 24px;
+    /* main.js panel genişliğine göre ayarlar */
+    --gap: 2px;
+
+    --bg: #f6f7fb;
+    --card: #ffffff;
+    --ink: #0f172a;
+    --muted: #64748b;
+
+    /* ızgara ve hücre */
+    --grid: #e6e9f2;
+    /* daha açık gri arkaplan */
+    --cellbg: #fbfbfd;
+    /* boş hücre rengi */
+    --cell-edge: #d7dbe6;
+    /* tek kenarlık */
+
+    /* Premium zemin (oyuna yakın pastel tonlar) */
+    --dl-bg: #9fc1d0;
+    /* H² mavi */
+    --tl-bg: #bda6d6;
+    /* H³ mor */
+    --dw-bg: #9dc89f;
+    /* K² yeşil */
+    --tw-bg: #b79f88;
+    /* K³ kahve */
+
+    /* Dolu taş (daha sarımsı turuncu) */
+    --tile-bg: #ffb347;
+    --tile-bg-top: #ffc879;
+    --tile-text: #1b1b1b;
+    --tile-edge: #d97a22;
+
+    --highlight: #22c55e;
+    /* önizleme çerçevesi */
+    --preview-bg: #fff8dc;
+    /* önizleme sarımsı zemin */
+}
+
+* {
+    box-sizing: border-box
+}
+
+html,
+body {
+    height: 100%
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: system-ui, Segoe UI, Roboto, Arial;
+}
+
+/* ---------- Top Bar ---------- */
+.topbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    background: #fff;
+    border-bottom: 1px solid #ececf0;
+}
+
+.brand {
+    font-weight: 800
+}
+
+.actions {
+    display: flex;
+    gap: 8px;
+    align-items: center
+}
+
+.filebtn {
+    position: relative;
+    overflow: hidden;
+    display: inline-flex
+}
+
+.filebtn input[type=file] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer
+}
+
+.filebtn span {
+    background: #fff;
+    border: 1px solid #d1d5db;
+    color: #111;
+    padding: 10px 12px;
+    border-radius: 12px;
+}
+
+.btn {
+    background: #111;
+    color: #fff;
+    border: 0;
+    padding: 10px 12px;
+    border-radius: 12px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.btn:disabled {
+    opacity: .6;
+    cursor: not-allowed
+}
+
+/* seçilince görünen minik önizleme karesi */
+.thumb {
+    width: 36px;
+    height: 36px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
+}
+
+/* ---------- Layout ---------- */
+.container {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.panel {
+    background: var(--card);
+    border: 1px solid #ececf0;
+    border-radius: 14px;
+    padding: 12px;
+}
+
+.meta {
+    color: var(--muted);
+    font-size: 12px
+}
+
+/* ---------- Board ---------- */
+.boardWrap {
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    padding: 0 6px;
+    /* az yan boşluk */
+}
+
+.board {
+    display: grid;
+    grid-template-columns: repeat(15, var(--cell));
+    gap: var(--gap);
+    background: var(--grid);
+    padding: var(--gap);
+    border-radius: 12px;
+    /* daha küçük radius */
+    border: 1px solid #e6eaf3;
+    /* açık gri kenar */
+    width: calc(15 * var(--cell) + 16 * var(--gap));
+}
+
+.cell {
+    width: var(--cell);
+    height: var(--cell);
+    border-radius: 7px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: calc(var(--cell)*.42);
+    position: relative;
+    user-select: none;
+
+    /* tek kenarlık, iç içe çizgi yok */
+    background: var(--cellbg);
+    border: 1px solid var(--cell-edge);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, .55);
+    color: #1f2937;
+}
+
+.cell.empty {
+    color: #c1c1c1
+}
+
+/* Premium zemin (tam hücre rengi) */
+.cell.DL {
+    background: var(--dl-bg)
+}
+
+.cell.TL {
+    background: var(--tl-bg)
+}
+
+.cell.DW {
+    background: var(--dw-bg)
+}
+
+.cell.TW {
+    background: var(--tw-bg)
+}
+
+/* Premium etiketi: ORTADA beyaz yazı (boşta harf gibi) */
+.mini {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    color: #fff;
+    font-weight: 900;
+    line-height: 1;
+    font-size: calc(var(--cell)*.38);
+    z-index: 2;
+    text-shadow: 0 1px 0 rgba(0, 0, 0, .25), 0 0 2px rgba(0, 0, 0, .18);
+}
+
+.mini.STAR {
+    font-size: calc(var(--cell)*.40);
+    color: #ffc24b
+}
+
+/* DOLU taş – sarımsı turuncu */
+.cell.filled {
+    background: linear-gradient(to bottom, var(--tile-bg-top), var(--tile-bg));
+    color: var(--tile-text);
+    border: 1px solid var(--tile-edge);
+    box-shadow:
+        inset 0 2px 0 rgba(255, 255, 255, .22),
+        inset 0 -2px 0 rgba(0, 0, 0, .08),
+        0 1px 0 rgba(0, 0, 0, .04);
+}
+
+/* Önizleme: yeşil çerçeve + sarımsı zemin */
+.cell.hl {
+    border: 2px solid var(--highlight) !important;
+    background: var(--preview-bg);
+}
+
+/* ---------- Eldeki Taşlar ---------- */
+.rack {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding-top: 6px
+}
+
+.rack .tile {
+    width: calc(var(--cell) * .95);
+    height: calc(var(--cell) * .95);
+    border-radius: 9px;
+    background: #fff;
+    border: 1px solid #e1e1e8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    font-size: calc(var(--cell)*.46);
+    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .06);
+}
+
+/* ---------- Preview Image ---------- */
+#preview {
+    display: none;
+    max-width: 100%;
+    max-height: 360px;
+    object-fit: contain;
+    border: 1px dashed #e1e1e8;
+    border-radius: 10px;
+}
+
+/* ---------- Moves: tek liste ---------- */
+.items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 60vh;
+    overflow: auto
+}
+
+.items li {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px;
+    border-top: 1px solid #f0f2f6;
+    cursor: pointer
+}
+
+.items li:first-child {
+    border-top: 0
+}
+
+.items li:hover {
+    background: #f7f8fc
+}
+
+.badge {
+    background: #eafaf0;
+    border: 1px solid #c7f0d5;
+    color: #0f5132;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 800;
+    font-size: 12px
+}

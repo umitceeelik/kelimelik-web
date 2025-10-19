@@ -1,0 +1,57 @@
+# ============================
+# Python
+# ============================
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.pyo
+
+# Virtualenv
+.venv/
+venv/
+env/
+ENV/
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# Logs / Cache
+*.log
+*.pot
+*.pyc
+*.pyd
+*.pdb
+*.swp
+.DS_Store
+
+# ============================
+# Environment / Secrets
+# ============================
+.env
+*.env
+
+# ============================
+# Project Specific
+# ============================
+# Backend output & debug
+out/
+out_v22t5/
+debug/
+backend/processing/__pycache__/
+backend/third_party/__pycache__/
+
+# Frontend build outputs (if using bundler later)
+node_modules/
+dist/
+build/
+
+# ============================
+# OS generated files
+# ============================
+Thumbs.db
