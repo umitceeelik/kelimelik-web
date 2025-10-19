@@ -16,7 +16,7 @@ if not GOOGLE_API_KEY:
 
 BASE_DIR = Path(__file__).resolve().parent
 THIRD = BASE_DIR / "third_party"
-AUTOBOX = THIRD / "kelimelik_autobox_fixed_v22t5.py"  # tahta & rack dilimleme  :contentReference[oaicite:3]{index=3}
+AUTOBOX = THIRD / "kelimelik_board_ocr.py"  # tahta & rack dilimleme  :contentReference[oaicite:3]{index=3}
 
 app = FastAPI(title="Kelimelik OCR")
 app.mount("/static", StaticFiles(directory=BASE_DIR.parent / "frontend"), name="static")
