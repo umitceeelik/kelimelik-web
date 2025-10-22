@@ -13,6 +13,8 @@ const meta = document.getElementById('meta');
 const movesEl = document.getElementById('moves');
 const summary = document.getElementById('summary');
 
+const debugGridEl = document.getElementById('debugGrid');
+
 let BOARD = Array.from({ length: 15 }, () => Array(15).fill('.'));
 let RACK = '';
 let MOVES = [];
@@ -21,13 +23,14 @@ let CFG = null;
 let PREM = null;
 let CURRENT_PREVIEW = null;
 
+let THREE_STAR = null;           // backend’den {row,col} veya null
+const THREE_STAR_BONUS = 25;     // +25
+
 /* =========== Board’ı panele TAM oturt =========== */
 function fitBoardToPanel() {
     const wrap = document.querySelector('.boardWrap');
     if (!wrap) return;
-    const GAP = 2;     // CSS --gap
-    const BORDER = 2;  // board 1px kenarlık * 2
-    const FUDGE = 1;   // taşmayı kesin önlemek için 1px marj
+    const GAP = 2, BORDER = 2, FUDGE = 1;
     const inner = wrap.clientWidth;
     const cell = Math.floor((inner - GAP * 16 - BORDER - FUDGE) / 15);
     const clamped = Math.max(20, cell);
@@ -64,20 +67,13 @@ function premiumLabel(type) {
 fileEl.addEventListener('change', () => {
     const f = fileEl.files?.[0];
     if (!f) return;
-
     const url = URL.createObjectURL(f);
-    // üst bardaki küçük kare
-    thumb.src = url;
-    thumb.hidden = false;
-    // alttaki büyük önizleme
-    preview.src = url;
-    preview.style.display = 'block';
-
-    // buton metnini "Değiştir" yap
+    thumb.src = url; thumb.hidden = false;
+    preview.src = url; preview.style.display = 'block';
     fileBtnTx.textContent = 'Değiştir';
 });
 
-/* =========== OCR + otomatik öner =========== */
+/* =========== OCR + öneriler =========== */
 solveBtn.addEventListener('click', async () => {
     const f = fileEl.files?.[0];
     if (!f) { alert('Lütfen ekran görüntüsü seçin.'); return; }
@@ -91,9 +87,8 @@ solveBtn.addEventListener('click', async () => {
         const data = await res.json(); if (!res.ok) throw new Error(data.error || 'Hata');
 
         BOARD = data.board;
-        // OCR bazen '?' döndürebiliyor → varsayılan olarak joker kabul edelim (hemen öneri çıkması için).
-        // Kullanıcı isterse rafta taşa dokunarak tekrar '?' yapabilir (toggle).
         RACK = String(data.rack || '').toLocaleUpperCase('tr-TR').replace(/\?/g, '*');
+        THREE_STAR = data.threeStar || null;
 
         CURRENT_PREVIEW = null;
         drawBoard(BOARD);
@@ -102,6 +97,15 @@ solveBtn.addEventListener('click', async () => {
 
         if (!DICT.length) DICT = await loadDictionary();
         await updateSuggestions();
+
+        if (debugGridEl) {
+            if (data.debugGrid) {
+                debugGridEl.src = data.debugGrid;
+                debugGridEl.style.display = 'block';
+            } else {
+                debugGridEl.style.display = 'none';
+            }
+        }
     } catch (e) {
         alert(e.message);
     } finally {
@@ -118,12 +122,25 @@ function drawBoard(b) {
         const ch = b[r][c];
 
         if (!ch || ch === '.' || ch === '?') {
+            // 3 yıldızlı hücreyi ÖNCE işle (premium/center ekleme!)
+            if (THREE_STAR && THREE_STAR.row === r && THREE_STAR.col === c) {
+                d.classList.add('threeStar');           // tam hücre arka plan
+                const star = document.createElement('span');
+                star.className = 'bigStar';
+                star.textContent = '★';
+                d.appendChild(star);
+                d.classList.add('empty');
+                boardEl.appendChild(d);
+                continue; // bu hücre için başka overlay ekleme
+            }
+
+            // ... (BURADAN SONRA premium ve merkez yıldız aynı kalsın)
             const p = PREM?.[r]?.[c];
             if (p) {
-                d.classList.add(p);                        // premium zemin
-                const mini = document.createElement('div'); // ortadaki beyaz etiket
+                d.classList.add(p);
+                const mini = document.createElement('div');
                 mini.className = `mini ${p}`;
-                mini.textContent = premiumLabel(p);        // "H²", "K³" ...
+                mini.textContent = premiumLabel(p);
                 d.appendChild(mini);
             }
             if (r === 7 && c === 7) {
@@ -137,12 +154,13 @@ function drawBoard(b) {
             d.classList.add('filled');
             d.textContent = ch;
         }
+
         d.dataset.r = r; d.dataset.c = c;
         boardEl.appendChild(d);
     }
 }
 
-// >>> Joker destekli rafta çizim (+ toggle * ↔ ?)
+// Joker/unknown toggle
 function drawRack(text) {
     rackEl.innerHTML = '';
     const arr = (text || '').split('');
@@ -151,19 +169,10 @@ function drawRack(text) {
         const d = document.createElement('div');
         d.className = 'tile';
 
-        if (ch === '*') {
-            d.classList.add('tile--joker');
-            d.textContent = '★';
-            d.title = 'Joker (*): dokunarak ? yap';
-        } else if (ch === '?') {
-            d.classList.add('tile--unknown');
-            d.textContent = '?';
-            d.title = 'Bilinmeyen taş: dokunarak joker (*) yap';
-        } else {
-            d.textContent = ch || '';
-        }
+        if (ch === '*') { d.classList.add('tile--joker'); d.textContent = '★'; d.title = 'Joker (*): ? yap'; }
+        else if (ch === '?') { d.classList.add('tile--unknown'); d.textContent = '?'; d.title = 'Bilinmeyen: * yap'; }
+        else { d.textContent = ch || ''; }
 
-        // Yalnızca * ve ? için toggle aktif
         d.addEventListener('click', () => {
             const cur = RACK.split('');
             if (cur[idx] === '*') cur[idx] = '?';
@@ -171,7 +180,7 @@ function drawRack(text) {
             else return;
             RACK = cur.join('');
             drawRack(RACK);
-            updateSuggestions(); // rack değişti → önerileri yenile
+            updateSuggestions();
         });
 
         rackEl.appendChild(d);
@@ -182,13 +191,21 @@ function countFilled(b) {
     let n = 0; for (const r of b) for (const ch of r) if (ch !== '.' && ch !== '?') n++; return n;
 }
 
-/* =========== Öneriler – tek liste, yüksekten düşüğe =========== */
+/* =========== Öneriler =========== */
 async function updateSuggestions() {
     const rows = BOARD.map(r => r.join(''));
-    // Solver’a giderken '?' → '*' çeviriyoruz ki joker gibi davransın
     const rackForSolve = RACK.replace(/\?/g, '*');
 
     MOVES = solveBoard(rows, rackForSolve, DICT);
+
+    // 3 yıldız bonusu
+    if (THREE_STAR) {
+        for (const m of MOVES) {
+            if ((m.placed || []).some(p => p.r === THREE_STAR.row && p.c === THREE_STAR.col)) {
+                m.score += THREE_STAR_BONUS;
+            }
+        }
+    }
     MOVES.sort((a, b) => (b.score - a.score) || (b.word.length - a.word.length));
     renderMoves();
 }
@@ -202,8 +219,7 @@ function renderMoves() {
         const li = document.createElement('li');
         li.innerHTML = `
       <span><b>${m.word}</b> <span class="meta">(${rcToHuman(m.row, m.col)} • ${m.dir})</span></span>
-      <span class="badge">${m.score}</span>
-    `;
+      <span class="badge">${m.score}</span>`;
         li.addEventListener('mouseenter', () => highlightMove(m, true));
         li.addEventListener('mouseleave', () => { if (CURRENT_PREVIEW !== m) highlightMove(m, false); });
         li.addEventListener('click', () => {

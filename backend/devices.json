@@ -1,0 +1,14 @@
+[
+    {
+        "name": "Galaxy S23 Ultra",
+        "screen_w": 1440,
+        "screen_h": 3088,
+        "board_top_px": 993
+    },
+    {
+        "name": "iPhone 13",
+        "screen_w": 1170,
+        "screen_h": 2532,
+        "board_top_px": 860
+    }
+]

@@ -323,3 +323,40 @@ body {
     border: 1px dashed #bbb;
     color: #666;
 }
+
+/* 3 yıldız: içte sarı kutu + üç yıldız */
+.cell.threeStar {
+    position: relative;
+}
+
+/* Tüm hücreyi kaplayan tek büyük yıldızlı kare */
+.cell.threeStar {
+    position: relative;
+    background: #ffefc2;
+    /* açık sarı zemin */
+    border: 2px solid #f59e0b;
+    /* turuncu kenar */
+    border-radius: 8px;
+    /* board hücresiyle uyumlu köşe */
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .55),
+        0 0 0 1px rgba(0, 0, 0, .03);
+}
+
+/* ortadaki tek büyük yıldız */
+.cell.threeStar .bigStar {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 900;
+    color: #f97316;
+    /* turuncu */
+    font-size: calc(var(--cell) * .66);
+    /* büyüklük: 0.62–0.72 arası deneyebilirsin */
+    line-height: 1;
+    text-shadow:
+        0 1px 0 rgba(255, 255, 255, .35),
+        0 0 2px rgba(0, 0, 0, .08);
+}
