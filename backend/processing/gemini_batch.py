@@ -5,6 +5,24 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps, Image
 import numpy as np
 import google.generativeai as genai
 
+# ==============================
+# DEBUG (her zaman açık)
+# ==============================
+DEBUG = True
+
+def _log(*args):
+    if DEBUG:
+        try:
+            print(*args, flush=True)
+        except Exception:
+            pass
+
+def _cp(s: str) -> str:
+    """Karakter(ler) için kod noktalarını yazdır (örn: İ U+0130)."""
+    if not s:
+        return "∅"
+    return " ".join(f"{ch} U+{ord(ch):04X}" for ch in str(s))
+
 # Türkçe alfabe + RACK için joker '*'
 VALID = ["A","B","C","Ç","D","E","F","G","Ğ","H","I","İ","J","K","L",
          "M","N","O","Ö","P","R","S","Ş","T","U","Ü","V","Y","Z","*"]
@@ -115,12 +133,11 @@ def _ink_score(path: str) -> float:
     thr = max(40.0, float(arr.mean()) - 0.9*float(arr.std()))
     return float((arr < thr).mean())
 
-# ---- yalnız model "I" dediğinde nokta arayan minik sezgi ----
+# ---- Nokta tespiti (İ için) ----
 def detect_dotted_i(path: str) -> bool:
     """
     Üst-orta bölgede küçük/kompakt koyu leke var mı? (İ'nin noktası)
     Sadece model "I" verdiyse çağrılır. Yanlış pozitifleri sınırlamak için
-    epey dar bir pencere ve kompaktlık kontrolü kullanıyoruz.
     """
     try:
         g = np.asarray(Image.open(path).convert("L"), dtype=np.uint8)
@@ -143,30 +160,23 @@ def detect_dotted_i(path: str) -> bool:
         return False
 
     mu, sigma = float(roi.mean()), float(roi.std())
-    thr = max(40.0, mu - 0.5 * sigma)  # koyuyu yakala
+    thr = max(40.0, mu - 0.5 * sigma)
     ink = roi < thr
     ink_ratio = float(ink.mean())
 
-    if ink_ratio < 0.012:  # neredeyse hiç koyu yoksa: dot yok
+    if ink_ratio < 0.012:
         return False
 
-    # Kompaktlık/ölçek kontrolü (dot çok büyük olmamalı)
     ys, xs = np.where(ink)
-    if len(xs) == 0:
+    if ys.size == 0:
         return False
     bw = xs.max() - xs.min() + 1
     bh = ys.max() - ys.min() + 1
-    box_area = bw * bh
-    pix = int(ink.sum())
-
-    # Dot için kaba sınırlar: kutunun küçük bir kısmını kaplasın
     roi_area = roi.shape[0] * roi.shape[1]
-    if box_area > 0.20 * roi_area:   # çok geniş bir leke → büyük ihtimalle dot değil
+    if (bw * bh) > 0.20 * roi_area:
         return False
-    if pix < 6:                      # çok az piksel → gürültü
+    if int(ink.sum()) < 6:
         return False
-
-    # En-boy da çok uzun olmasın (sap gibi bir leke olmasın)
     if bh > int(0.50 * (y1 - y0)) or bw > int(0.60 * (x1 - x0)):
         return False
 
@@ -174,10 +184,50 @@ def detect_dotted_i(path: str) -> bool:
 
 # -------- Türkçe büyük harfe çevirme (yalnızca i/ı için güvenli) --------
 def tr_upper(ch: str) -> str:
-    ch = ch.strip()
+    ch = (ch or "").strip()
     if ch == "i": return "İ"
     if ch == "ı": return "I"
     return ch.upper()
+
+# -------- Turuncu ikon yakalama (fallback) --------
+def _orange_score(path: str) -> float:
+    """
+    Turuncu üç-yıldız ikonunu HSV renk alanında kabaca skorlar.
+    Dönüş: [0..1] arası turuncu yoğunluğu.
+    """
+    try:
+        im = Image.open(path).convert("RGB")
+    except Exception:
+        return 0.0
+
+    arr = np.asarray(im, dtype=np.uint8)
+    if arr.size == 0:
+        return 0.0
+
+    hsv = Image.fromarray(arr).convert("HSV")
+    h, s, v = np.dsplit(np.asarray(hsv, dtype=np.uint8), 3)
+    h = h.squeeze(); s = s.squeeze(); v = v.squeeze()
+
+    # Geniş turuncu aralığı (iOS farklılıkları için gevşek)
+    # ~10..40 derece => 7..35 (0..255 skalasında)
+    h_mask = (h >= 7) & (h <= 35)
+    s_mask = s >= 110
+    v_mask = v >= 120
+
+    mask = h_mask & s_mask & v_mask
+    ratio = float(mask.mean())
+
+    if ratio < 0.003:  # %0.3'ten azsa yok say
+        return 0.0
+
+    # İkon çoğunlukla üst yarıda belirgin
+    H = mask.shape[0]
+    top_half = mask[: H // 2, :]
+    top_ratio = float(top_half.mean())
+    if top_ratio < ratio * 0.5:
+        ratio *= 0.6
+
+    return ratio
 
 # ---------------- main ----------------
 def classify_all_with_gemini(
@@ -202,65 +252,93 @@ def classify_all_with_gemini(
         legend = _legend(meta)
         image_part = {"mime_type":"image/png", "data": _pil_bytes(sheet)}
 
+        _log("\n=== GEMINI REQUEST ===")
+        _log("Legend:\n", legend)
+
         resp = genai.GenerativeModel(model).generate_content(
             [PROMPT_ALL, legend, image_part],
             generation_config={"temperature": 0.0}
         )
         text = getattr(resp, "text", None)
         if not text:
-            try: text = resp.candidates[0].content.parts[0].text
-            except Exception: text = "{}"
+            try:
+                text = resp.candidates[0].content.parts[0].text
+            except Exception:
+                text = "{}"
+
+        _log("\n=== GEMINI RAW TEXT ===")
+        _log(text if len(text) < 4000 else text[:4000] + "\n...[truncated]...")
+
         mobj = re.search(r"\{[\s\S]*\}", text)
         try:
             data = json.loads(mobj.group(0) if mobj else text)
-        except Exception:
+        except Exception as e:
+            _log("JSON parse ERROR:", e)
             data = {"letters": [], "threeStar_idx": None}
 
-        letters = data.get("letters", [])
+        letters = data.get("letters", []) or []
         ts_idx  = data.get("threeStar_idx", None)
         idx_map = {m["idx"]: m for m in meta}
+
+        _log(f"\n=== PARSED letters={len(letters)} threeStar_idx={ts_idx} ===")
 
         for item in letters:
             try:
                 idx  = int(item.get("idx"))
                 raw  = str(item.get("char",""))
-                ch   = tr_upper(raw)       # Türkçe güvenli upper
                 conf = float(item.get("conf",0))
             except Exception:
                 continue
-            if idx not in idx_map or ch not in VALID:
-                continue
 
-            tag, path = idx_map[idx]["tag"], idx_map[idx]["path"]
+            meta_i = idx_map.get(idx)
+            tag = meta_i["tag"] if meta_i else "??"
+            path = meta_i["path"] if meta_i else "??"
+
+            # Normalize
+            ch = tr_upper(raw)
 
             # Joker yalnız RACK
             if ch == "*" and tag != "RACK":
+                _log(f"[{idx:02d}] {tag} {os.path.basename(path)} raw='{raw}'({_cp(raw)}) -> '*' REJECT (not RACK)")
                 continue
 
-            # hafif filtre
+            # ink skorunu hesapla (dot kararında da kullanalım)
+            ink = _ink_score(path) if meta_i else 0.0
+
+            # === I/İ TERS HARİTALAMA ===
+            dotted = None
+            if ch in ("I", "İ") and meta_i:
+                try:
+                    dotted = detect_dotted_i(path)
+                    # BİLEREK TERS: nokta varsa "I", yoksa "İ"
+                    ch = "I" if dotted else "İ"
+                except Exception:
+                    dotted = None
+
+            # VALID check
+            if idx not in idx_map or ch not in VALID:
+                _log(f"[{idx:02d}] {tag} {os.path.basename(path)} -> '{ch}' INVALID  conf={conf:.2f} ink={ink:.3f} dotted={dotted}")
+                continue
+
+            # conf / ink filtreleri
             if ch == "*":
                 if conf < 0.50:
+                    _log(f"[{idx:02d}] {tag} {os.path.basename(path)} -> '*' REJECT low_conf={conf:.2f}")
                     continue
             else:
-                if conf < 0.65:
-                    continue
-                if _ink_score(path) < 0.02:
+                if conf < 0.65 or ink < 0.02:
+                    _log(f"[{idx:02d}] {tag} {os.path.basename(path)} -> '{ch}' REJECT low (conf={conf:.2f}, ink={ink:.3f}) dotted={dotted}")
                     continue
 
-            # ---- I → İ görsel sezgisi ----
-            # Model "I" dediyse ve üst-ortada nokta benzeri leke bulunuyorsa, İ'ye çevir.
-            if ch == "I":
-                try:
-                    if detect_dotted_i(path):
-                        ch = "İ"
-                except Exception:
-                    pass
-
+            # Kabul
             if tag == "OCC":
                 board_out[path] = (ch, conf)
             elif tag == "RACK":
                 rack_out[path]  = (ch, conf)
 
+            _log(f"[{idx:02d}] {tag} {os.path.basename(path)} raw='{raw}'({_cp(raw)}) -> FINAL='{ch}'({_cp(ch)}) conf={conf:.2f} ink={ink:.3f} dotted={dotted}")
+
+        # --- JSON threeStar_idx geldiyse kullan ---
         if ts_idx is not None:
             try:
                 ts_idx = int(ts_idx)
@@ -268,5 +346,30 @@ def classify_all_with_gemini(
                     star_emp_idx_global = base + ts_idx - (len(occ_paths) + len(rack_paths))
             except Exception:
                 pass
+
+        # --- GELMEZSE: turuncu-tarama fallback'i (iOS için) ---
+        if star_emp_idx_global is None:
+            best_local_idx = None
+            best_score = 0.0
+            for m in meta:
+                if m["tag"] != "EMP":
+                    continue
+                score = _orange_score(m["path"])
+                _log(f"[FALLBACK] EMP {os.path.basename(m['path'])} orange_score={score:.5f}")
+                if score > best_score:
+                    best_score = score
+                    best_local_idx = m["idx"]
+
+            if best_local_idx is not None and best_score >= 0.006:
+                try:
+                    star_emp_idx_global = base + best_local_idx - (len(occ_paths) + len(rack_paths))
+                    _log(f"[FALLBACK] threeStar_idx -> local:{best_local_idx}  global_emp_idx:{star_emp_idx_global}  score={best_score:.5f}")
+                except Exception as e:
+                    _log("[FALLBACK] threeStar compute error:", e)
+
+    _log("\n=== SUMMARY ===")
+    _log("board_out:", {os.path.basename(k): v for k,v in board_out.items()})
+    _log("rack_out:", {os.path.basename(k): v for k,v in rack_out.items()})
+    _log("star_emp_idx_global:", star_emp_idx_global)
 
     return board_out, rack_out, star_emp_idx_global
