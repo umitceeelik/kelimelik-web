@@ -1,14 +1,12 @@
 # processing/gemini_batch.py
-import io, re, json, math, os
+import io, re, json, math, os, unicodedata
 from typing import List, Dict, Tuple, Optional
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps, Image
 import numpy as np
 import google.generativeai as genai
 
-# ==============================
-# DEBUG (her zaman açık)
-# ==============================
-DEBUG = True
+# --- DEBUG toggle (varsayılan AÇIK) ---
+DEBUG = str(os.getenv("DEBUG_GEMINI", "1")).lower() in ("1", "true", "yes")
 
 def _log(*args):
     if DEBUG:
@@ -46,6 +44,11 @@ Rules:
 - Emit letters only for OCC and RACK; never emit letters for EMP.
 - For RACK: if the tile has no letter, emit "*" with conf 1.0.
 - Do NOT emit "*" for OCC.
+
+STRICT EMP RULES:
+- Do NOT output any letters for EMP under ANY circumstance.
+- If you see bonus texts like "H²", "K³" etc. on EMP, STILL OUTPUT NOTHING for EMP.
+- When in doubt for EMP, prefer to output nothing.
 """
 
 # ---------------- utils ----------------
@@ -137,7 +140,6 @@ def _ink_score(path: str) -> float:
 def detect_dotted_i(path: str) -> bool:
     """
     Üst-orta bölgede küçük/kompakt koyu leke var mı? (İ'nin noktası)
-    Sadece model "I" verdiyse çağrılır. Yanlış pozitifleri sınırlamak için
     """
     try:
         g = np.asarray(Image.open(path).convert("L"), dtype=np.uint8)
@@ -189,51 +191,50 @@ def tr_upper(ch: str) -> str:
     if ch == "ı": return "I"
     return ch.upper()
 
-# -------- Turuncu ikon yakalama (fallback) --------
+# --------- Turuncu yıldız fallback skoru (HSV) ----------
 def _orange_score(path: str) -> float:
-    """
-    Turuncu üç-yıldız ikonunu HSV renk alanında kabaca skorlar.
-    Dönüş: [0..1] arası turuncu yoğunluğu.
-    """
     try:
         im = Image.open(path).convert("RGB")
     except Exception:
         return 0.0
-
     arr = np.asarray(im, dtype=np.uint8)
     if arr.size == 0:
         return 0.0
 
-    hsv = Image.fromarray(arr).convert("HSV")
-    h, s, v = np.dsplit(np.asarray(hsv, dtype=np.uint8), 3)
-    h = h.squeeze(); s = s.squeeze(); v = v.squeeze()
+    # RGB -> HSV (0..255)
+    r = arr[...,0].astype(np.float32)
+    g = arr[...,1].astype(np.float32)
+    b = arr[...,2].astype(np.float32)
+    mx = np.maximum(np.maximum(r,g), b)
+    mn = np.minimum(np.minimum(r,g), b)
+    diff = mx - mn + 1e-6
 
-    # Geniş turuncu aralığı (iOS farklılıkları için gevşek)
-    # ~10..40 derece => 7..35 (0..255 skalasında)
-    h_mask = (h >= 7) & (h <= 35)
-    s_mask = s >= 110
-    v_mask = v >= 120
+    # Hue approx (0..180 OpenCV benzeri ölçek)
+    h = np.zeros_like(mx)
+    mask = (mx == r)
+    h[mask] = (60.0 * ((g[mask]-b[mask]) / diff[mask]) + 360.0) % 360.0
+    mask = (mx == g)
+    h[mask] = (60.0 * ((b[mask]-r[mask]) / diff[mask]) + 120.0) % 360.0
+    mask = (mx == b)
+    h[mask] = (60.0 * ((r[mask]-g[mask]) / diff[mask]) + 240.0) % 360.0
+    h = (h / 2.0)  # 0..180
 
+    s = np.where(mx > 0, (diff / (mx + 1e-6)) * 255.0, 0.0)
+    v = mx
+
+    # Biraz gevşek eşikler (kalabalık/iOS toleranslı)
+    h_mask = (h >= 5) & (h <= 40)   # eskiden 7..35
+    s_mask = s >= 100               # eskiden 110
+    v_mask = v >= 110               # eskiden 120
     mask = h_mask & s_mask & v_mask
-    ratio = float(mask.mean())
 
-    if ratio < 0.003:  # %0.3'ten azsa yok say
-        return 0.0
-
-    # İkon çoğunlukla üst yarıda belirgin
-    H = mask.shape[0]
-    top_half = mask[: H // 2, :]
-    top_ratio = float(top_half.mean())
-    if top_ratio < ratio * 0.5:
-        ratio *= 0.6
-
-    return ratio
+    return float(mask.mean())
 
 # ---------------- main ----------------
 def classify_all_with_gemini(
     occ_paths: List[str], rack_paths: List[str], emp_paths: List[str],
     api_key: str, model: str = "models/gemini-2.0-flash",
-    cols: int = 12, tile: int = 224
+    cols: int = 10, tile: int = 224
 ) -> Tuple[Dict[str, Tuple[str,float]], Dict[str, Tuple[str,float]], Optional[int]]:
     genai.configure(api_key=api_key)
 
@@ -245,7 +246,9 @@ def classify_all_with_gemini(
     rack_out:  Dict[str, Tuple[str,float]] = {}
     star_emp_idx_global: Optional[int] = None
 
-    chunk_size = cols * 8
+    # Kalabalıkta karışmayı azalt
+    chunk_size = cols * 6
+
     for base in range(0, len(pairs), chunk_size):
         chunk = pairs[base:base+chunk_size]
         sheet, meta = _grid_sheet(pairs=chunk, cols=cols, tile=tile)
@@ -261,10 +264,8 @@ def classify_all_with_gemini(
         )
         text = getattr(resp, "text", None)
         if not text:
-            try:
-                text = resp.candidates[0].content.parts[0].text
-            except Exception:
-                text = "{}"
+            try: text = resp.candidates[0].content.parts[0].text
+            except Exception: text = "{}"
 
         _log("\n=== GEMINI RAW TEXT ===")
         _log(text if len(text) < 4000 else text[:4000] + "\n...[truncated]...")
@@ -291,43 +292,51 @@ def classify_all_with_gemini(
                 continue
 
             meta_i = idx_map.get(idx)
-            tag = meta_i["tag"] if meta_i else "??"
-            path = meta_i["path"] if meta_i else "??"
+            if not meta_i:
+                continue
+            tag  = meta_i["tag"]
+            path = meta_i["path"]
+
+            # --- EMP'ten gelen harfleri tamamen ignore et ---
+            if tag == "EMP":
+                _log(f"[{idx:02d}] EMP {os.path.basename(path)} -> IGNORE any letters from model")
+                continue
 
             # Normalize
             ch = tr_upper(raw)
 
             # Joker yalnız RACK
             if ch == "*" and tag != "RACK":
-                _log(f"[{idx:02d}] {tag} {os.path.basename(path)} raw='{raw}'({_cp(raw)}) -> '*' REJECT (not RACK)")
+                _log(f"[{idx:02d}] {tag} {os.path.basename(path)} raw='{raw}'({_cp(raw)}) -> ch='{ch}'({_cp(ch)}) conf={conf:.2f}  REASON=reject:*_but_not_RACK")
                 continue
 
             # ink skorunu hesapla (dot kararında da kullanalım)
-            ink = _ink_score(path) if meta_i else 0.0
+            ink = _ink_score(path)
 
-            # === I/İ TERS HARİTALAMA ===
+            # === SİMETRİK DOT KONTROLÜ (I/İ İÇİN) ===
             dotted = None
-            if ch in ("I", "İ") and meta_i:
+            if ch in ("I", "İ"):
                 try:
                     dotted = detect_dotted_i(path)
-                    # BİLEREK TERS: nokta varsa "I", yoksa "İ"
+                    # *** İSTENEN TERSLEME ***
+                    # nokta varsa I, yoksa İ
                     ch = "I" if dotted else "İ"
                 except Exception:
                     dotted = None
 
             # VALID check
-            if idx not in idx_map or ch not in VALID:
-                _log(f"[{idx:02d}] {tag} {os.path.basename(path)} -> '{ch}' INVALID  conf={conf:.2f} ink={ink:.3f} dotted={dotted}")
+            if ch not in VALID:
+                _log(f"[{idx:02d}] {tag} {os.path.basename(path)} raw='{raw}'({_cp(raw)}) -> ch='{ch}'({_cp(ch)}) conf={conf:.2f} ink={ink:.3f} dotted={dotted}  REASON=reject:not_in_VALID")
                 continue
 
             # conf / ink filtreleri
             if ch == "*":
                 if conf < 0.50:
-                    _log(f"[{idx:02d}] {tag} {os.path.basename(path)} -> '*' REJECT low_conf={conf:.2f}")
+                    _log(f"[{idx:02d}] {tag} {os.path.basename(path)} raw='{raw}'({_cp(raw)}) -> ch='*' conf={conf:.2f} ink={ink:.3f} dotted={dotted}  REASON=reject:low_conf_joker")
                     continue
             else:
                 if conf < 0.65 or ink < 0.02:
-                    _log(f"[{idx:02d}] {tag} {os.path.basename(path)} -> '{ch}' REJECT low (conf={conf:.2f}, ink={ink:.3f}) dotted={dotted}")
+                    _log(f"[{idx:02d}] {tag} {os.path.basename(path)} raw='{raw}'({_cp(raw)}) -> ch='{ch}'({_cp(ch)}) conf={conf:.2f} ink={ink:.3f} dotted={dotted}  REASON=reject:low_conf_or_low_ink")
                     continue
 
             # Kabul
@@ -338,38 +347,33 @@ def classify_all_with_gemini(
 
             _log(f"[{idx:02d}] {tag} {os.path.basename(path)} raw='{raw}'({_cp(raw)}) -> FINAL='{ch}'({_cp(ch)}) conf={conf:.2f} ink={ink:.3f} dotted={dotted}")
 
-        # --- JSON threeStar_idx geldiyse kullan ---
+        # threeStar köşe bilgisi geldiyse (chunk içi EMP index'ini global EMP index'ine çevir)
         if ts_idx is not None:
             try:
                 ts_idx = int(ts_idx)
                 if 0 <= ts_idx < len(meta) and idx_map[ts_idx]["tag"] == "EMP":
+                    # global EMP index'i: tüm OCC+RACK'leri atla
                     star_emp_idx_global = base + ts_idx - (len(occ_paths) + len(rack_paths))
             except Exception:
                 pass
 
-        # --- GELMEZSE: turuncu-tarama fallback'i (iOS için) ---
-        if star_emp_idx_global is None:
-            best_local_idx = None
-            best_score = 0.0
-            for m in meta:
-                if m["tag"] != "EMP":
-                    continue
-                score = _orange_score(m["path"])
-                _log(f"[FALLBACK] EMP {os.path.basename(m['path'])} orange_score={score:.5f}")
-                if score > best_score:
-                    best_score = score
-                    best_local_idx = m["idx"]
-
-            if best_local_idx is not None and best_score >= 0.006:
-                try:
-                    star_emp_idx_global = base + best_local_idx - (len(occ_paths) + len(rack_paths))
-                    _log(f"[FALLBACK] threeStar_idx -> local:{best_local_idx}  global_emp_idx:{star_emp_idx_global}  score={best_score:.5f}")
-                except Exception as e:
-                    _log("[FALLBACK] threeStar compute error:", e)
+    # ---- Fallback yıldız: Gemini vermezse EMP'leri tara (HSV) ----
+    if star_emp_idx_global is None and len(emp_paths) > 0:
+        best_idx = None
+        best_score = 0.0
+        for i, p in enumerate(emp_paths):
+            sc = _orange_score(p)
+            _log(f"[FALLBACK] EMP {os.path.basename(p)} orange_score={sc:.5f}")
+            if sc > best_score:
+                best_score = sc
+                best_idx = i
+        # Biraz daha toleranslı eşik:
+        if best_idx is not None and best_score >= 0.004:
+            star_emp_idx_global = best_idx
 
     _log("\n=== SUMMARY ===")
     _log("board_out:", {os.path.basename(k): v for k,v in board_out.items()})
-    _log("rack_out:", {os.path.basename(k): v for k,v in rack_out.items()})
+    _log("rack_out:",  {os.path.basename(k): v for k,v in rack_out.items()})
     _log("star_emp_idx_global:", star_emp_idx_global)
 
     return board_out, rack_out, star_emp_idx_global
