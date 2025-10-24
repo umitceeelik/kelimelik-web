@@ -3,28 +3,39 @@
 
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Kelimelik OCR & Önerici – Görüntüden tahta algılama ve en iyi kelime önerileri" />
+    <meta name="theme-color" content="#ffffff" />
     <title>Kelimelik OCR & Önerici</title>
-    <link rel="stylesheet" href="/static/style.css">
+
+    <link rel="stylesheet" href="/static/style.css" />
+    <link rel="icon" type="image/png" href="/static/favicon.png" />
 </head>
 
 <body>
+    <noscript>
+        <div style="padding: 12px; background: #fee2e2; color: #b91c1c; text-align: center; font-weight: 600;">
+            Bu uygulamayı kullanmak için JavaScript etkin olmalıdır.
+        </div>
+    </noscript>
+
     <header class="topbar">
         <div class="brand">Kelimelik OCR</div>
 
         <div class="actions">
-            <!-- sadece dosya seçilince görünen küçük kare -->
-            <img id="thumb" class="thumb" alt="" hidden>
+            <img id="thumb" class="thumb" alt="yüklenen küçük önizleme" hidden>
 
             <label class="filebtn">
                 <input id="file" type="file" accept="image/*" />
                 <span id="fileBtnText">Dosya Seç</span>
             </label>
+
             <button id="solveBtn" class="btn">Çöz</button>
         </div>
     </header>
 
     <main class="container">
+        <!-- Tahta Görünümü -->
         <section class="panel">
             <h2>Tahta</h2>
             <div id="meta" class="meta"></div>
@@ -37,15 +48,13 @@
             <div id="rack" class="rack"></div>
 
             <h3>Yüklenen Görüntü</h3>
-            <img id="preview" alt="yüklenen görüntü" />
-            <h3>Autobox Debug (15×15 mozaik)</h3>
-            <img id="debugGrid" alt="kırpım mozaik" />
+            <img id="preview" alt="yüklenen görüntü önizlemesi" hidden />
         </section>
 
+        <!-- Öneriler -->
         <section class="panel">
             <h2>Önerilen Hamleler</h2>
             <div id="summary" class="meta"></div>
-            <!-- tek liste, yüksekten düşüğe -->
             <ul id="moves" class="items"></ul>
         </section>
     </main>

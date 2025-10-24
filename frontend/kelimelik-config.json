@@ -2,7 +2,7 @@
     "SIZE": 15,
     "EMPTY": ".",
     "BLANK": "*",
-    "BINGO_SCORE": 30,
+    "BINGO_SCORE": 50,
     "letterScores": {
         "A": 1,
         "B": 3,

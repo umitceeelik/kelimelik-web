@@ -1,6 +1,6 @@
 :root {
     --cell: 24px;
-    /* main.js panel genişliğine göre ayarlar */
+    /* main.js panel genişliğine göre dinamik */
     --gap: 2px;
 
     --bg: #f6f7fb;
@@ -8,43 +8,39 @@
     --ink: #0f172a;
     --muted: #64748b;
 
-    /* ızgara ve hücre */
+    /* Board görünümü */
     --grid: #e6e9f2;
-    /* daha açık gri arkaplan */
     --cellbg: #fbfbfd;
-    /* boş hücre rengi */
     --cell-edge: #d7dbe6;
-    /* tek kenarlık */
 
-    /* Premium zemin (oyuna yakın pastel tonlar) */
+    /* Premium kare renkleri */
     --dl-bg: #9fc1d0;
-    /* H² mavi */
+    /* H² */
     --tl-bg: #bda6d6;
-    /* H³ mor */
+    /* H³ */
     --dw-bg: #9dc89f;
-    /* K² yeşil */
+    /* K² */
     --tw-bg: #b79f88;
-    /* K³ kahve */
+    /* K³ */
 
-    /* Dolu taş (daha sarımsı turuncu) */
+    /* Dolu taş renkleri */
     --tile-bg: #ffb347;
     --tile-bg-top: #ffc879;
     --tile-text: #1b1b1b;
     --tile-edge: #d97a22;
 
+    /* Önizleme ve vurgular */
     --highlight: #22c55e;
-    /* önizleme çerçevesi */
     --preview-bg: #fff8dc;
-    /* önizleme sarımsı zemin */
 }
 
 * {
-    box-sizing: border-box
+    box-sizing: border-box;
 }
 
 html,
 body {
-    height: 100%
+    height: 100%;
 }
 
 body {
@@ -54,7 +50,7 @@ body {
     font-family: system-ui, Segoe UI, Roboto, Arial;
 }
 
-/* ---------- Top Bar ---------- */
+/* === Üst Menü === */
 .topbar {
     position: sticky;
     top: 0;
@@ -68,26 +64,26 @@ body {
 }
 
 .brand {
-    font-weight: 800
+    font-weight: 800;
 }
 
 .actions {
     display: flex;
     gap: 8px;
-    align-items: center
+    align-items: center;
 }
 
 .filebtn {
     position: relative;
+    display: inline-flex;
     overflow: hidden;
-    display: inline-flex
 }
 
 .filebtn input[type=file] {
     position: absolute;
     inset: 0;
     opacity: 0;
-    cursor: pointer
+    cursor: pointer;
 }
 
 .filebtn span {
@@ -110,10 +106,10 @@ body {
 
 .btn:disabled {
     opacity: .6;
-    cursor: not-allowed
+    cursor: not-allowed;
 }
 
-/* seçilince görünen minik önizleme karesi */
+/* Küçük önizleme kutusu */
 .thumb {
     width: 36px;
     height: 36px;
@@ -122,7 +118,7 @@ body {
     border: 1px solid #e5e7eb;
 }
 
-/* ---------- Layout ---------- */
+/* === Layout === */
 .container {
     max-width: 980px;
     margin: 0 auto;
@@ -141,16 +137,15 @@ body {
 
 .meta {
     color: var(--muted);
-    font-size: 12px
+    font-size: 12px;
 }
 
-/* ---------- Board ---------- */
+/* === Tahta === */
 .boardWrap {
     overflow: hidden;
     display: flex;
     justify-content: center;
     padding: 0 6px;
-    /* az yan boşluk */
 }
 
 .board {
@@ -160,9 +155,7 @@ body {
     background: var(--grid);
     padding: var(--gap);
     border-radius: 12px;
-    /* daha küçük radius */
     border: 1px solid #e6eaf3;
-    /* açık gri kenar */
     width: calc(15 * var(--cell) + 16 * var(--gap));
 }
 
@@ -175,38 +168,36 @@ body {
     justify-content: center;
     font-weight: 800;
     font-size: calc(var(--cell)*.42);
-    position: relative;
-    user-select: none;
-
-    /* tek kenarlık, iç içe çizgi yok */
     background: var(--cellbg);
     border: 1px solid var(--cell-edge);
     box-shadow: 0 1px 0 rgba(255, 255, 255, .55);
     color: #1f2937;
+    position: relative;
+    user-select: none;
 }
 
 .cell.empty {
-    color: #c1c1c1
+    color: #c1c1c1;
 }
 
-/* Premium zemin (tam hücre rengi) */
+/* Premium hücreler */
 .cell.DL {
-    background: var(--dl-bg)
+    background: var(--dl-bg);
 }
 
 .cell.TL {
-    background: var(--tl-bg)
+    background: var(--tl-bg);
 }
 
 .cell.DW {
-    background: var(--dw-bg)
+    background: var(--dw-bg);
 }
 
 .cell.TW {
-    background: var(--tw-bg)
+    background: var(--tw-bg);
 }
 
-/* Premium etiketi: ORTADA beyaz yazı (boşta harf gibi) */
+/* Premium etiket */
 .mini {
     position: absolute;
     left: 50%;
@@ -214,18 +205,17 @@ body {
     transform: translate(-50%, -50%);
     color: #fff;
     font-weight: 900;
-    line-height: 1;
     font-size: calc(var(--cell)*.38);
-    z-index: 2;
     text-shadow: 0 1px 0 rgba(0, 0, 0, .25), 0 0 2px rgba(0, 0, 0, .18);
+    line-height: 1;
 }
 
 .mini.STAR {
     font-size: calc(var(--cell)*.40);
-    color: #ffc24b
+    color: #ffc24b;
 }
 
-/* DOLU taş – sarımsı turuncu */
+/* Dolu taş */
 .cell.filled {
     background: linear-gradient(to bottom, var(--tile-bg-top), var(--tile-bg));
     color: var(--tile-text);
@@ -236,18 +226,18 @@ body {
         0 1px 0 rgba(0, 0, 0, .04);
 }
 
-/* Önizleme: yeşil çerçeve + sarımsı zemin */
+/* Önizleme */
 .cell.hl {
     border: 2px solid var(--highlight) !important;
     background: var(--preview-bg);
 }
 
-/* ---------- Eldeki Taşlar ---------- */
+/* === Eldeki Taşlar === */
 .rack {
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
-    padding-top: 6px
+    padding-top: 6px;
 }
 
 .rack .tile {
@@ -264,53 +254,7 @@ body {
     box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .06);
 }
 
-/* ---------- Preview Image ---------- */
-#preview {
-    display: none;
-    max-width: 100%;
-    max-height: 360px;
-    object-fit: contain;
-    border: 1px dashed #e1e1e8;
-    border-radius: 10px;
-}
-
-/* ---------- Moves: tek liste ---------- */
-.items {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    max-height: 60vh;
-    overflow: auto
-}
-
-.items li {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-    padding: 10px;
-    border-top: 1px solid #f0f2f6;
-    cursor: pointer
-}
-
-.items li:first-child {
-    border-top: 0
-}
-
-.items li:hover {
-    background: #f7f8fc
-}
-
-.badge {
-    background: #eafaf0;
-    border: 1px solid #c7f0d5;
-    color: #0f5132;
-    padding: 2px 8px;
-    border-radius: 999px;
-    font-weight: 800;
-    font-size: 12px
-}
-
-/* Joker ve bilinmeyen taş stilleri */
+/* === Özel Taşlar === */
 .tile--joker {
     background: #fff0cc;
     border: 2px dashed #ff9800;
@@ -324,26 +268,63 @@ body {
     color: #666;
 }
 
-/* 3 yıldız: içte sarı kutu + üç yıldız */
-.cell.threeStar {
-    position: relative;
+/* === Önizleme Görseli === */
+#preview {
+    display: none;
+    max-width: 100%;
+    max-height: 360px;
+    object-fit: contain;
+    border: 1px dashed #e1e1e8;
+    border-radius: 10px;
 }
 
-/* Tüm hücreyi kaplayan tek büyük yıldızlı kare */
+/* === Hamle Listesi === */
+.items {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 60vh;
+    overflow: auto;
+}
+
+.items li {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px;
+    border-top: 1px solid #f0f2f6;
+    cursor: pointer;
+}
+
+.items li:first-child {
+    border-top: 0;
+}
+
+.items li:hover {
+    background: #f7f8fc;
+}
+
+.badge {
+    background: #eafaf0;
+    border: 1px solid #c7f0d5;
+    color: #0f5132;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-weight: 800;
+    font-size: 12px;
+}
+
+/* === 3 Yıldız Alanı === */
 .cell.threeStar {
-    position: relative;
     background: #ffefc2;
-    /* açık sarı zemin */
     border: 2px solid #f59e0b;
-    /* turuncu kenar */
     border-radius: 8px;
-    /* board hücresiyle uyumlu köşe */
     box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, .55),
         0 0 0 1px rgba(0, 0, 0, .03);
+    position: relative;
 }
 
-/* ortadaki tek büyük yıldız */
 .cell.threeStar .bigStar {
     position: absolute;
     inset: 0;
@@ -352,10 +333,7 @@ body {
     justify-content: center;
     font-weight: 900;
     color: #f97316;
-    /* turuncu */
     font-size: calc(var(--cell) * .66);
-    /* büyüklük: 0.62–0.72 arası deneyebilirsin */
-    line-height: 1;
     text-shadow:
         0 1px 0 rgba(255, 255, 255, .35),
         0 0 2px rgba(0, 0, 0, .08);

@@ -1,30 +1,28 @@
 # processing/gemini_batch.py
-import io, re, json, math, os, unicodedata
+# -----------------------------------------------------------------------------
+# Kelimelik ekran görüntüsündeki kutucukları (OCC/RACK/EMP) tek bir “contact
+# sheet” olarak Gemini'ye gönderir ve çıkan JSON’u parse eder.
+# - OCC: Tahtadaki dolu harf kutusu (tek büyük harf varsa al).
+# - RACK: Elde taşlar (tek harf varsa al; boşsa joker "*").
+# - EMP: Boş kutu (3 yıldız ikonunu içerebilir). EMP için asla harf üretme.
+#
+# Özel durumlar:
+# - Türkçe I/İ ayrımı görüntüden tespit edilir (nokta varsa I, yoksa İ).
+# - Kalabalık ekranlarda stabilite için daha küçük chunk’lar gönderilir.
+# - 3-yıldız Gemini’den gelmezse HSV tabanlı fallback ile bulunur.
+# -----------------------------------------------------------------------------
+
+import io, re, json, math, os
 from typing import List, Dict, Tuple, Optional
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps, Image
 import numpy as np
 import google.generativeai as genai
 
-# --- DEBUG toggle (varsayılan AÇIK) ---
-DEBUG = str(os.getenv("DEBUG_GEMINI", "1")).lower() in ("1", "true", "yes")
-
-def _log(*args):
-    if DEBUG:
-        try:
-            print(*args, flush=True)
-        except Exception:
-            pass
-
-def _cp(s: str) -> str:
-    """Karakter(ler) için kod noktalarını yazdır (örn: İ U+0130)."""
-    if not s:
-        return "∅"
-    return " ".join(f"{ch} U+{ord(ch):04X}" for ch in str(s))
-
-# Türkçe alfabe + RACK için joker '*'
+# Türkçe alfabe + RACK için joker
 VALID = ["A","B","C","Ç","D","E","F","G","Ğ","H","I","İ","J","K","L",
          "M","N","O","Ö","P","R","S","Ş","T","U","Ü","V","Y","Z","*"]
 
+# Model talimatı — EMP için harf üretmemesi ve RACK-joker kuralı net
 PROMPT_ALL = f"""
 You will receive ONE contact sheet with many tiles (image crops).
 Legend maps TILE INDEX -> TAG -> FILENAME. TAG ∈ {{OCC, RACK, EMP}}.
@@ -51,12 +49,13 @@ STRICT EMP RULES:
 - When in doubt for EMP, prefer to output nothing.
 """
 
-# ---------------- utils ----------------
+# ---------------- Görsel yardımcıları ----------------
+
 def _pil_bytes(img: Image.Image, fmt="PNG") -> bytes:
     buf = io.BytesIO(); img.save(buf, fmt); return buf.getvalue()
 
 def _to_square_pad(img: Image.Image, pad_ratio: float = 0.12, bg=(245,245,245)) -> Image.Image:
-    # Kare kanvas + üstte biraz fazla pay (İ noktasını korumak için)
+    """Kare kanvas + üstte ekstra pay (İ'nin noktası kesilmesin)."""
     w, h = img.size
     side = max(w, h)
     pad = int(side * pad_ratio)
@@ -70,27 +69,24 @@ def _to_square_pad(img: Image.Image, pad_ratio: float = 0.12, bg=(245,245,245)) 
 def _clahe_numpy(gray: np.ndarray) -> np.ndarray:
     g = gray.astype(np.float32)
     g -= g.min()
-    rng = g.max() + 1e-6
-    g = np.clip(g / rng, 0, 1)
+    g = np.clip(g / (g.max() + 1e-6), 0, 1)
     g = np.power(g, 0.85)
     return (g*255.0).astype(np.uint8)
 
 def _prep_tile(im: Image.Image) -> Image.Image:
-    # 2× büyüt + normalize + unsharp + kare pad
-    scale = 2.0
-    w, h = im.size
-    im = im.resize((int(w*scale), int(h*scale)), Image.Resampling.BICUBIC)
+    """Tile'ı büyüt + keskinleştir + normalize + kare pad."""
+    im = im.resize((int(im.width*2), int(im.height*2)), Image.Resampling.BICUBIC)
     g = np.array(ImageOps.exif_transpose(im).convert("L"))
     g = _clahe_numpy(g)
-    sharpen = Image.fromarray(g).filter(ImageFilter.UnsharpMask(radius=1.2, percent=160, threshold=2))
-    arr = np.array(sharpen, dtype=np.uint8)
+    g = Image.fromarray(g).filter(ImageFilter.UnsharpMask(radius=1.2, percent=160, threshold=2))
+    arr = np.array(g, dtype=np.uint8)
     lo, hi = np.percentile(arr, (1, 99))
     if hi > lo:
         arr = np.clip((arr - lo) * (255.0/(hi - lo)), 0, 255).astype(np.uint8)
-    out = Image.fromarray(arr).convert("RGB")
-    return _to_square_pad(out, pad_ratio=0.12, bg=(245,245,245))
+    return _to_square_pad(Image.fromarray(arr).convert("RGB"), pad_ratio=0.12, bg=(245,245,245))
 
-def _grid_sheet(pairs: List[Tuple[str, str]], cols=12, tile=224, pad=12, cap_h=22):
+def _grid_sheet(pairs: List[Tuple[str, str]], cols=10, tile=224, pad=12, cap_h=22):
+    """Tile’ları tek sheet’e dizer; üstlerine (idx:TAG) etiketi basar."""
     rows = max(1, math.ceil(len(pairs)/cols))
     W = cols*tile + (cols+1)*pad
     H = rows*(tile+cap_h) + (rows+1)*pad
@@ -102,19 +98,13 @@ def _grid_sheet(pairs: List[Tuple[str, str]], cols=12, tile=224, pad=12, cap_h=2
     meta=[]
     for i,(tag,p) in enumerate(pairs):
         r=i//cols; c=i%cols
-        x = pad + c*(tile+pad)
-        y = pad + r*(tile+cap_h+pad)
-        try:
-            im = Image.open(p).convert("RGB")
-        except:
-            im = Image.new("RGB",(tile,tile),(235,235,235))
+        x = pad + c*(tile+pad); y = pad + r*(tile+cap_h+pad)
+        try: im = Image.open(p).convert("RGB")
+        except: im = Image.new("RGB",(tile,tile),(235,235,235))
         im = _prep_tile(im)
-        iw, ih = im.size
-        s = min(tile/iw, tile/ih)
-        im = im.resize((max(1,int(iw*s)), max(1,int(ih*s))), Image.Resampling.BICUBIC)
-        ox = x + (tile-im.size[0])//2
-        oy = y + (tile-im.size[1])//2
-        sheet.paste(im,(ox,oy))
+        s = min(tile/im.width, tile/im.height)
+        im = im.resize((max(1,int(im.width*s)), max(1,int(im.height*s))), Image.Resampling.BICUBIC)
+        sheet.paste(im,(x+(tile-im.width)//2, y+(tile-im.height)//2))
 
         label = f"{i}:{tag}"
         wtxt = draw.textlength(label, font=font)
@@ -130,112 +120,82 @@ def _legend(meta: List[Dict]) -> str:
     )
 
 def _ink_score(path: str) -> float:
+    """Koyu piksel oranı ~ görünür mürekkep. Çok düşükse filtrelenir."""
     try: arr = np.asarray(Image.open(path).convert("L"), dtype=np.uint8)
     except: return 0.0
     if arr.size == 0: return 0.0
     thr = max(40.0, float(arr.mean()) - 0.9*float(arr.std()))
     return float((arr < thr).mean())
 
-# ---- Nokta tespiti (İ için) ----
+# ---------------- Özel I/İ noktası tespiti ----------------
 def detect_dotted_i(path: str) -> bool:
-    """
-    Üst-orta bölgede küçük/kompakt koyu leke var mı? (İ'nin noktası)
-    """
-    try:
-        g = np.asarray(Image.open(path).convert("L"), dtype=np.uint8)
-    except Exception:
-        return False
-    if g.size == 0:
-        return False
+    """Üst-orta küçük ve kompakt koyu leke var mı? (İ'nin noktası)"""
+    try: g = np.asarray(Image.open(path).convert("L"), dtype=np.uint8)
+    except Exception: return False
+    if g.size == 0 or min(g.shape) < 12: return False
 
     h, w = g.shape
-    if h < 12 or w < 12:
-        return False
-
-    # Üst-orta pencere: yükseklik %5..35, genişlik merkez ±%12
-    y0 = int(0.05 * h); y1 = int(0.35 * h)
-    cx = w // 2
-    x0 = max(0, cx - int(0.12 * w))
-    x1 = min(w, cx + int(0.12 * w))
+    y0, y1 = int(0.05*h), int(0.35*h)
+    cx = w // 2; x0 = max(0, cx - int(0.12*w)); x1 = min(w, cx + int(0.12*w))
     roi = g[y0:y1, x0:x1]
-    if roi.size == 0:
-        return False
+    if roi.size == 0: return False
 
     mu, sigma = float(roi.mean()), float(roi.std())
-    thr = max(40.0, mu - 0.5 * sigma)
+    thr = max(40.0, mu - 0.5*sigma)
     ink = roi < thr
     ink_ratio = float(ink.mean())
-
-    if ink_ratio < 0.012:
-        return False
+    if ink_ratio < 0.012: return False
 
     ys, xs = np.where(ink)
-    if ys.size == 0:
-        return False
-    bw = xs.max() - xs.min() + 1
-    bh = ys.max() - ys.min() + 1
+    if ys.size == 0: return False
+    bw, bh = xs.max()-xs.min()+1, ys.max()-ys.min()+1
     roi_area = roi.shape[0] * roi.shape[1]
-    if (bw * bh) > 0.20 * roi_area:
-        return False
-    if int(ink.sum()) < 6:
-        return False
-    if bh > int(0.50 * (y1 - y0)) or bw > int(0.60 * (x1 - x0)):
-        return False
-
+    if (bw*bh) > 0.20*roi_area: return False
+    if int(ink.sum()) < 6: return False
+    if bh > int(0.50*(y1 - y0)) or bw > int(0.60*(x1 - x0)): return False
     return True
 
-# -------- Türkçe büyük harfe çevirme (yalnızca i/ı için güvenli) --------
 def tr_upper(ch: str) -> str:
+    """Türkçe güvenli büyük harf (i→İ, ı→I)."""
     ch = (ch or "").strip()
     if ch == "i": return "İ"
     if ch == "ı": return "I"
     return ch.upper()
 
-# --------- Turuncu yıldız fallback skoru (HSV) ----------
+# ---------------- 3-yıldız fallback (HSV turuncu skoru) ----------------
 def _orange_score(path: str) -> float:
-    try:
-        im = Image.open(path).convert("RGB")
-    except Exception:
-        return 0.0
-    arr = np.asarray(im, dtype=np.uint8)
-    if arr.size == 0:
-        return 0.0
+    """Turuncu yıldız için gevşek HSV filtresi; farklı cihaz tonlarına toleranslı."""
+    try: arr = np.asarray(Image.open(path).convert("RGB"), dtype=np.uint8)
+    except Exception: return 0.0
+    if arr.size == 0: return 0.0
 
-    # RGB -> HSV (0..255)
-    r = arr[...,0].astype(np.float32)
-    g = arr[...,1].astype(np.float32)
-    b = arr[...,2].astype(np.float32)
-    mx = np.maximum(np.maximum(r,g), b)
-    mn = np.minimum(np.minimum(r,g), b)
+    r, g, b = [arr[...,i].astype(np.float32) for i in (0,1,2)]
+    mx, mn = np.maximum(np.maximum(r,g), b), np.minimum(np.minimum(r,g), b)
     diff = mx - mn + 1e-6
 
-    # Hue approx (0..180 OpenCV benzeri ölçek)
     h = np.zeros_like(mx)
-    mask = (mx == r)
-    h[mask] = (60.0 * ((g[mask]-b[mask]) / diff[mask]) + 360.0) % 360.0
-    mask = (mx == g)
-    h[mask] = (60.0 * ((b[mask]-r[mask]) / diff[mask]) + 120.0) % 360.0
-    mask = (mx == b)
-    h[mask] = (60.0 * ((r[mask]-g[mask]) / diff[mask]) + 240.0) % 360.0
+    m = (mx == r); h[m] = (60.0 * ((g[m]-b[m]) / diff[m]) + 360.0) % 360.0
+    m = (mx == g); h[m] = (60.0 * ((b[m]-r[m]) / diff[m]) + 120.0) % 360.0
+    m = (mx == b); h[m] = (60.0 * ((r[m]-g[m]) / diff[m]) + 240.0) % 360.0
     h = (h / 2.0)  # 0..180
-
     s = np.where(mx > 0, (diff / (mx + 1e-6)) * 255.0, 0.0)
     v = mx
 
-    # Biraz gevşek eşikler (kalabalık/iOS toleranslı)
-    h_mask = (h >= 5) & (h <= 40)   # eskiden 7..35
-    s_mask = s >= 100               # eskiden 110
-    v_mask = v >= 110               # eskiden 120
-    mask = h_mask & s_mask & v_mask
+    h_mask = (h >= 5) & (h <= 40)
+    s_mask = s >= 100
+    v_mask = v >= 110
+    return float((h_mask & s_mask & v_mask).mean())
 
-    return float(mask.mean())
-
-# ---------------- main ----------------
+# ---------------- Ana işlev ----------------
 def classify_all_with_gemini(
     occ_paths: List[str], rack_paths: List[str], emp_paths: List[str],
     api_key: str, model: str = "models/gemini-2.0-flash",
     cols: int = 10, tile: int = 224
 ) -> Tuple[Dict[str, Tuple[str,float]], Dict[str, Tuple[str,float]], Optional[int]]:
+    """
+    OCC/RACK/EMP tile'larını parça parça (chunk) Gemini'ye gönderir.
+    Dönen harfleri OCR + iş kuralları ile normalize eder.
+    """
     genai.configure(api_key=api_key)
 
     pairs = [("OCC", p) for p in occ_paths] + \
@@ -246,7 +206,7 @@ def classify_all_with_gemini(
     rack_out:  Dict[str, Tuple[str,float]] = {}
     star_emp_idx_global: Optional[int] = None
 
-    # Kalabalıkta karışmayı azalt
+    # Kalabalıkta karışmayı azaltmak için küçük chunk'lar
     chunk_size = cols * 6
 
     for base in range(0, len(pairs), chunk_size):
@@ -254,9 +214,6 @@ def classify_all_with_gemini(
         sheet, meta = _grid_sheet(pairs=chunk, cols=cols, tile=tile)
         legend = _legend(meta)
         image_part = {"mime_type":"image/png", "data": _pil_bytes(sheet)}
-
-        _log("\n=== GEMINI REQUEST ===")
-        _log("Legend:\n", legend)
 
         resp = genai.GenerativeModel(model).generate_content(
             [PROMPT_ALL, legend, image_part],
@@ -267,26 +224,19 @@ def classify_all_with_gemini(
             try: text = resp.candidates[0].content.parts[0].text
             except Exception: text = "{}"
 
-        _log("\n=== GEMINI RAW TEXT ===")
-        _log(text if len(text) < 4000 else text[:4000] + "\n...[truncated]...")
-
         mobj = re.search(r"\{[\s\S]*\}", text)
         try:
             data = json.loads(mobj.group(0) if mobj else text)
-        except Exception as e:
-            _log("JSON parse ERROR:", e)
+        except Exception:
             data = {"letters": [], "threeStar_idx": None}
 
         letters = data.get("letters", []) or []
         ts_idx  = data.get("threeStar_idx", None)
         idx_map = {m["idx"]: m for m in meta}
 
-        _log(f"\n=== PARSED letters={len(letters)} threeStar_idx={ts_idx} ===")
-
         for item in letters:
             try:
-                idx  = int(item.get("idx"))
-                raw  = str(item.get("char",""))
+                idx  = int(item.get("idx")); raw  = str(item.get("char",""))
                 conf = float(item.get("conf",0))
             except Exception:
                 continue
@@ -294,86 +244,55 @@ def classify_all_with_gemini(
             meta_i = idx_map.get(idx)
             if not meta_i:
                 continue
-            tag  = meta_i["tag"]
-            path = meta_i["path"]
 
-            # --- EMP'ten gelen harfleri tamamen ignore et ---
+            tag, path = meta_i["tag"], meta_i["path"]
+
+            # EMP'ten gelen her şeyi kesinlikle yok say
             if tag == "EMP":
-                _log(f"[{idx:02d}] EMP {os.path.basename(path)} -> IGNORE any letters from model")
                 continue
 
-            # Normalize
-            ch = tr_upper(raw)
-
-            # Joker yalnız RACK
+            ch = tr_upper(raw)           # temel normalize (i/ı)
             if ch == "*" and tag != "RACK":
-                _log(f"[{idx:02d}] {tag} {os.path.basename(path)} raw='{raw}'({_cp(raw)}) -> ch='{ch}'({_cp(ch)}) conf={conf:.2f}  REASON=reject:*_but_not_RACK")
-                continue
+                continue                 # joker yalnız RACK
 
-            # ink skorunu hesapla (dot kararında da kullanalım)
-            ink = _ink_score(path)
+            ink = _ink_score(path)       # gürültü filtresi
 
-            # === SİMETRİK DOT KONTROLÜ (I/İ İÇİN) ===
-            dotted = None
+            # I/İ özel: NOKTA VARSA → I, YOKSA → İ
             if ch in ("I", "İ"):
                 try:
-                    dotted = detect_dotted_i(path)
-                    # *** İSTENEN TERSLEME ***
-                    # nokta varsa I, yoksa İ
-                    ch = "I" if dotted else "İ"
+                    ch = "I" if detect_dotted_i(path) else "İ"
                 except Exception:
-                    dotted = None
+                    pass
 
-            # VALID check
             if ch not in VALID:
-                _log(f"[{idx:02d}] {tag} {os.path.basename(path)} raw='{raw}'({_cp(raw)}) -> ch='{ch}'({_cp(ch)}) conf={conf:.2f} ink={ink:.3f} dotted={dotted}  REASON=reject:not_in_VALID")
                 continue
 
-            # conf / ink filtreleri
-            if ch == "*":
-                if conf < 0.50:
-                    _log(f"[{idx:02d}] {tag} {os.path.basename(path)} raw='{raw}'({_cp(raw)}) -> ch='*' conf={conf:.2f} ink={ink:.3f} dotted={dotted}  REASON=reject:low_conf_joker")
-                    continue
-            else:
-                if conf < 0.65 or ink < 0.02:
-                    _log(f"[{idx:02d}] {tag} {os.path.basename(path)} raw='{raw}'({_cp(raw)}) -> ch='{ch}'({_cp(ch)}) conf={conf:.2f} ink={ink:.3f} dotted={dotted}  REASON=reject:low_conf_or_low_ink")
-                    continue
+            # Güven eşiği + mürekkep filtresi
+            if (ch != "*" and (conf < 0.65 or ink < 0.02)) or (ch == "*" and conf < 0.50):
+                continue
 
-            # Kabul
             if tag == "OCC":
                 board_out[path] = (ch, conf)
             elif tag == "RACK":
-                rack_out[path]  = (ch, conf)
+                rack_out[path] = (ch, conf)
 
-            _log(f"[{idx:02d}] {tag} {os.path.basename(path)} raw='{raw}'({_cp(raw)}) -> FINAL='{ch}'({_cp(ch)}) conf={conf:.2f} ink={ink:.3f} dotted={dotted}")
-
-        # threeStar köşe bilgisi geldiyse (chunk içi EMP index'ini global EMP index'ine çevir)
+        # threeStar_idx chunk içindeki EMP indeksini, global EMP indeksine çevir
         if ts_idx is not None:
             try:
                 ts_idx = int(ts_idx)
                 if 0 <= ts_idx < len(meta) and idx_map[ts_idx]["tag"] == "EMP":
-                    # global EMP index'i: tüm OCC+RACK'leri atla
                     star_emp_idx_global = base + ts_idx - (len(occ_paths) + len(rack_paths))
             except Exception:
                 pass
 
-    # ---- Fallback yıldız: Gemini vermezse EMP'leri tara (HSV) ----
+    # Fallback: Gemini threeStar döndürmediyse EMP'lerde turuncu ara
     if star_emp_idx_global is None and len(emp_paths) > 0:
-        best_idx = None
-        best_score = 0.0
+        best_idx, best_score = None, 0.0
         for i, p in enumerate(emp_paths):
             sc = _orange_score(p)
-            _log(f"[FALLBACK] EMP {os.path.basename(p)} orange_score={sc:.5f}")
             if sc > best_score:
-                best_score = sc
-                best_idx = i
-        # Biraz daha toleranslı eşik:
+                best_score, best_idx = sc, i
         if best_idx is not None and best_score >= 0.004:
             star_emp_idx_global = best_idx
-
-    _log("\n=== SUMMARY ===")
-    _log("board_out:", {os.path.basename(k): v for k,v in board_out.items()})
-    _log("rack_out:",  {os.path.basename(k): v for k,v in rack_out.items()})
-    _log("star_emp_idx_global:", star_emp_idx_global)
 
     return board_out, rack_out, star_emp_idx_global
