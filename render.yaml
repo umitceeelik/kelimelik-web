@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: kelimelik-web-backend
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    rootDir: backend

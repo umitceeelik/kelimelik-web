@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+
+[tool.black]
+line-length = 100
+target-version = ["py39"]
+skip-string-normalization = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]  # uzun satırlar için black zaten bakıyor
+exclude = ["backend/.venv", "backend/third_party"]
+
+[tool.ruff.isort]
+known-first-party = ["backend"]
