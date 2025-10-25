@@ -55,7 +55,21 @@
         <section class="panel">
             <h2>Önerilen Hamleler</h2>
             <div id="summary" class="meta"></div>
-            <ul id="moves" class="items"></ul>
+
+            <!-- Tabs -->
+            <div class="tabs">
+                <button id="tabScore" class="tab-btn active" type="button">Puan</button>
+                <button id="tabLength" class="tab-btn" type="button">Uzunluğa göre</button>
+            </div>
+
+            <!-- Tab panelleri -->
+            <div id="panelScore" class="tab-panel">
+                <ul id="movesScore" class="items"></ul>
+            </div>
+
+            <div id="panelLength" class="tab-panel" hidden>
+                <div id="movesLength" class="groups"></div>
+            </div>
         </section>
     </main>
 

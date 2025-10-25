@@ -1,6 +1,6 @@
 :root {
     --cell: 24px;
-    /* main.js panel genişliğine göre dinamik */
+    /* JS dinamik günceller */
     --gap: 2px;
 
     --bg: #f6f7fb;
@@ -109,7 +109,6 @@ body {
     cursor: not-allowed;
 }
 
-/* Küçük önizleme kutusu */
 .thumb {
     width: 36px;
     height: 36px;
@@ -140,24 +139,23 @@ body {
     font-size: 12px;
 }
 
-/* === Tahta === */
+/* === Tahta (responsive) === */
 .boardWrap {
     overflow: hidden;
-    display: flex;
-    justify-content: center;
-    padding: 0 6px;
 }
 
 .board {
-    display: grid;
+    display: inline-grid;
     grid-template-columns: repeat(15, var(--cell));
     gap: var(--gap);
     background: var(--grid);
     padding: var(--gap);
     border-radius: 12px;
     border: 1px solid #e6eaf3;
-    width: calc(15 * var(--cell) + 16 * var(--gap));
+    width: auto;
+    max-width: none;
 }
+
 
 .cell {
     width: var(--cell);
@@ -205,9 +203,9 @@ body {
     transform: translate(-50%, -50%);
     color: #fff;
     font-weight: 900;
+    line-height: 1;
     font-size: calc(var(--cell)*.38);
     text-shadow: 0 1px 0 rgba(0, 0, 0, .25), 0 0 2px rgba(0, 0, 0, .18);
-    line-height: 1;
 }
 
 .mini.STAR {
@@ -226,7 +224,7 @@ body {
         0 1px 0 rgba(0, 0, 0, .04);
 }
 
-/* Önizleme */
+/* Önizleme highlight */
 .cell.hl {
     border: 2px solid var(--highlight) !important;
     background: var(--preview-bg);
@@ -254,7 +252,7 @@ body {
     box-shadow: inset 0 -2px 0 rgba(0, 0, 0, .06);
 }
 
-/* === Özel Taşlar === */
+/* Özel taşlar */
 .tile--joker {
     background: #fff0cc;
     border: 2px dashed #ff9800;
@@ -268,7 +266,7 @@ body {
     color: #666;
 }
 
-/* === Önizleme Görseli === */
+/* Önizleme görseli */
 #preview {
     display: none;
     max-width: 100%;
@@ -278,7 +276,38 @@ body {
     border-radius: 10px;
 }
 
-/* === Hamle Listesi === */
+/* === Tabs (EKLENDİ) === */
+.tabs {
+    display: inline-flex;
+    gap: 6px;
+    margin: 8px 0 6px;
+    border-bottom: 1px solid #f0f2f6;
+    padding-bottom: 6px;
+}
+
+.tab-btn {
+    appearance: none;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    color: #111;
+    padding: 8px 10px;
+    border-radius: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.tab-btn.active {
+    background: #111;
+    color: #fff;
+    border-color: #111;
+}
+
+.tab-panel[hidden] {
+    display: none;
+}
+
+/* === Hamle Listeleri === */
 .items {
     list-style: none;
     margin: 0;
@@ -304,6 +333,12 @@ body {
     background: #f7f8fc;
 }
 
+.items li.selected {
+    background: #eefbf3;
+}
+
+/* seçili satır */
+
 .badge {
     background: #eafaf0;
     border: 1px solid #c7f0d5;
@@ -312,6 +347,24 @@ body {
     border-radius: 999px;
     font-weight: 800;
     font-size: 12px;
+}
+
+/* Gruplu görünüm (EKLENDİ) */
+.groups {
+    display: block;
+}
+
+.group {
+    margin: 8px 0 12px;
+    border: 1px dashed #e9eef5;
+    border-radius: 10px;
+    padding: 6px;
+}
+
+.group h4 {
+    margin: 6px 8px;
+    font-size: 13px;
+    color: #334155;
 }
 
 /* === 3 Yıldız Alanı === */
@@ -337,4 +390,18 @@ body {
     text-shadow:
         0 1px 0 rgba(255, 255, 255, .35),
         0 0 2px rgba(0, 0, 0, .08);
+}
+
+/* Çok geniş ekranlarda biraz daha büyüsün (opsiyonel) */
+@media (min-width: 1400px) {
+    .boardWrap {
+        width: min(80vh, 800px);
+    }
+}
+
+/* 🔽 dar ekranlarda gap'i azalt */
+@media (max-width: 380px) {
+    :root {
+        --gap: 1px;
+    }
 }
