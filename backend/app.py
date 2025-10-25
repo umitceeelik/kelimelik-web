@@ -18,7 +18,7 @@ import cv2
 import numpy as np
 
 # yerel import (backend klasöründen çalıştırıyoruz)
-import kelimelik_solver
+from backend import kelimelik_solver
 from processing.gemini_batch import classify_all_with_gemini
 
 load_dotenv()
