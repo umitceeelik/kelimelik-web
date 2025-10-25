@@ -7,12 +7,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Çalışma dizini
-WORKDIR /app
+# Çalışma dizinimiz İÇTEKİ klasör olsun
+# (repo kökünde bir 'kelimelik-web/' klasörü var)
+WORKDIR /app/kelimelik-web
 
-# Yalnızca requirements'ı kopyala ve kur (cache dostu)
-COPY backend/requirements.txt /app/backend/requirements.txt
-RUN pip install --no-cache-dir -r /app/backend/requirements.txt
+# Sadece requirements'ı kopyala ve kur (cache dostu)
+COPY kelimelik-web/backend/requirements.txt /app/kelimelik-web/backend/requirements.txt
+RUN pip install --no-cache-dir -r /app/kelimelik-web/backend/requirements.txt
 
 # Tüm repo (frontend + backend) image'a girsin
 COPY . /app
@@ -20,4 +21,5 @@ COPY . /app
 # Uygulama başlatma
 ENV PORT=8000
 EXPOSE 8000
+# Artık çalışma dizini /app/kelimelik-web, modül yolu: backend/app.py -> backend.app:app
 CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000"]
