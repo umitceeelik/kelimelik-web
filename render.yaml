@@ -4,5 +4,5 @@ services:
     runtime: docker
     plan: free
     autoDeploy: true
-    rootDir: kelimelik-web
-    dockerfilePath: Dockerfile
+    rootDir: .
+    dockerfilePath: kelimelik-web/backend/Dockerfile
