@@ -7,18 +7,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Çalışma dizinini backend'e ayarlayacağız ama context repo kökü olacak
-WORKDIR /app/backend
+# Çalışma dizini
+WORKDIR /app
 
-# Önce sadece requirements'ı kopyala ve kur (cache dostu)
+# Yalnızca requirements'ı kopyala ve kur (cache dostu)
 COPY backend/requirements.txt /app/backend/requirements.txt
 RUN pip install --no-cache-dir -r /app/backend/requirements.txt
 
-# Sonra tüm repo içeriğini kopyala (frontend de dahil)
+# Tüm repo (frontend + backend) image'a girsin
 COPY . /app
 
 # Uygulama başlatma
 ENV PORT=8000
 EXPOSE 8000
-# Artık modul yolu backend altında: backend/app.py -> backend.app:app
 CMD ["uvicorn", "backend.app:app", "--host", "0.0.0.0", "--port", "8000"]

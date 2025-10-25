@@ -5,4 +5,4 @@ services:
     plan: free
     autoDeploy: true
     rootDir: .
-    dockerfilePath: backend/Dockerfile
+    dockerfilePath: Dockerfile
