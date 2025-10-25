@@ -19,7 +19,7 @@ import numpy as np
 
 # yerel import (backend klasöründen çalıştırıyoruz)
 from backend import kelimelik_solver
-from processing.gemini_batch import classify_all_with_gemini
+from backend.processing.gemini_batch import classify_all_with_gemini
 
 load_dotenv()
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "").strip()
