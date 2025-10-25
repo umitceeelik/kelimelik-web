@@ -4,4 +4,5 @@ services:
     runtime: docker
     plan: free
     autoDeploy: true
-    rootDir: backend
+    rootDir: .
+    dockerfilePath: backend/Dockerfile
